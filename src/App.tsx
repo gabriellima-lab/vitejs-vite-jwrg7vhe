@@ -3,7 +3,6 @@ import { initializeApp, getApps, getApp } from 'firebase/app';
 import { 
   getAuth, 
   signInWithEmailAndPassword, 
-  createUserWithEmailAndPassword, 
   signOut, 
   onAuthStateChanged
 } from 'firebase/auth';
@@ -71,7 +70,7 @@ const processImage = (file: File): Promise<string> => {
 };
 
 export default function App() {
-  const [user, setUser] = useState<any>(null); // <-- CORREÇÃO AQUI (Removido o tipo 'User' estrito)
+  const [user, setUser] = useState<any>(null); 
   const [authLoading, setAuthLoading] = useState(true);
   const [items, setItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(false); 
@@ -128,7 +127,7 @@ export default function App() {
       setLoading(false);
     }, (error) => {
       console.error("Erro ao buscar dados:", error);
-      alert("Sua conta ainda não tem permissão para ler o estoque. Verifique as regras do banco de dados.");
+      alert("A sua conta ainda não tem permissão para ler o estoque. Verifique as regras do banco de dados.");
       setLoading(false);
     });
     return () => unsubscribe();
@@ -253,7 +252,7 @@ export default function App() {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center">
         <div className="animate-spin rounded-full h-12 w-12 border-b-4 mb-4" style={{ borderColor: COLORS.blue }}></div>
-        <p className="text-slate-500 font-bold animate-pulse">Acessando o sistema...</p>
+        <p className="text-slate-500 font-bold animate-pulse">Acedendo ao sistema...</p>
       </div>
     );
   }
@@ -266,7 +265,7 @@ export default function App() {
     <div className="min-h-screen bg-slate-50 font-sans text-slate-800 pb-20">
       {isOffline && (
         <div className="bg-amber-500 text-white px-4 py-2 flex items-center justify-center gap-2 text-sm font-bold shadow-md z-50 relative">
-          <WifiOff className="w-4 h-4" /> Sem conexão à internet.
+          <WifiOff className="w-4 h-4" /> Sem ligação à internet.
         </div>
       )}
 
@@ -545,10 +544,9 @@ export default function App() {
 }
 
 // ==========================================
-// COMPONENTE: TELA DE LOGIN
+// COMPONENTE: TELA DE LOGIN (SEM CRIAÇÃO DE CONTA)
 // ==========================================
 function AuthScreen({ colors, auth }: any) {
-  const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -561,27 +559,20 @@ function AuthScreen({ colors, auth }: any) {
 
     const emailAjustado = email.toLowerCase().trim();
     if (!emailAjustado.endsWith('@seel.com.br')) {
-      setErrorMsg('Acesso restrito! Apenas e-mails corporativos (@seel.com.br) são permitidos no sistema.');
+      setErrorMsg('Acesso restrito! Apenas e-mails corporativos (@seel.com.br) são permitidos.');
       setLoading(false);
       return;
     }
 
     try {
-      if (isLogin) {
-        await signInWithEmailAndPassword(auth, emailAjustado, password);
-      } else {
-        await createUserWithEmailAndPassword(auth, emailAjustado, password);
-      }
+      // Faz apenas o Login. A criação de conta agora é no painel do Firebase.
+      await signInWithEmailAndPassword(auth, emailAjustado, password);
     } catch (error: any) {
       console.error(error);
       if (error.code === 'auth/invalid-credential' || error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') {
-        setErrorMsg('Email ou senha incorretos.');
-      } else if (error.code === 'auth/email-already-in-use') {
-        setErrorMsg('Este email corporativo já possui conta.');
-      } else if (error.code === 'auth/weak-password') {
-        setErrorMsg('A senha deve ter pelo menos 6 caracteres.');
+        setErrorMsg('E-mail ou senha incorretos.');
       } else {
-        setErrorMsg('Erro de autenticação. Verifique se ativou Email/Senha no Firebase.');
+        setErrorMsg('Erro de autenticação. Contacte o administrador do sistema.');
       }
     } finally {
       setLoading(false);
@@ -616,15 +607,9 @@ function AuthScreen({ colors, auth }: any) {
           </div>
 
           <button type="submit" disabled={loading} className="w-full py-4 rounded-xl text-white font-black text-lg shadow-md hover:shadow-lg transition-all flex justify-center" style={{ backgroundColor: colors.blue }}>
-            {loading ? <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-white"></div> : (isLogin ? 'Entrar no Sistema' : 'Criar Conta de Acesso')}
+            {loading ? <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-white"></div> : 'Entrar no Sistema'}
           </button>
         </form>
-
-        <div className="p-6 bg-slate-50 border-t border-slate-100 text-center">
-          <button type="button" onClick={() => { setIsLogin(!isLogin); setErrorMsg(''); }} className="text-slate-600 font-bold hover:text-blue-800 transition-colors text-sm">
-            {isLogin ? 'Nova obra? Criar uma conta de acesso.' : 'Já tem conta? Fazer login.'}
-          </button>
-        </div>
       </div>
     </div>
   );
