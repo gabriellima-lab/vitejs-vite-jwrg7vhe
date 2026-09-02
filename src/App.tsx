@@ -591,10 +591,10 @@ function AuthScreen({ colors, auth }: any) {
           {errorMsg && <div className="bg-red-50 text-red-700 p-4 rounded-xl text-sm font-bold border border-red-200 text-center flex items-center justify-center gap-2"><AlertTriangle className="w-5 h-5 shrink-0"/> {errorMsg}</div>}
           
           <div>
-            <label className="block text-sm font-bold text-slate-600 mb-2 uppercase tracking-wider">Email Corporativo SEEL</label>
+            <label className="block text-sm font-bold text-slate-600 mb-2 uppercase tracking-wider">Email SEEL</label>
             <div className="relative">
               <UserIcon className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5" />
-              <input type="email" required value={email} onChange={e => setEmail(e.target.value)} className="w-full pl-12 pr-4 py-4 border-2 border-slate-200 rounded-xl outline-none focus:border-blue-700 transition-colors font-medium text-lg" placeholder="seu.nome@seel.com.br" />
+              <input type="email" required value={email} onChange={e => setEmail(e.target.value)} className="w-full pl-12 pr-4 py-4 border-2 border-slate-200 rounded-xl outline-none focus:border-blue-700 transition-colors font-medium text-lg" placeholder="email@seel.com.br" />
             </div>
           </div>
           
