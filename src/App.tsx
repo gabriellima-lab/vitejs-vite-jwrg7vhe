@@ -5,11 +5,10 @@ import { 
   signInWithEmailAndPassword, 
   createUserWithEmailAndPassword, 
   signOut, 
-  onAuthStateChanged,
-  User
+  onAuthStateChanged
 } from 'firebase/auth';
 import { 
-  getFirestore, collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, enableIndexedDbPersistence, writeBatch, query
+  getFirestore, collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, writeBatch, query
 } from 'firebase/firestore';
 import { 
   Package, Plus, Search, Edit2, Trash2, Camera, X, Save, HardHat, Wrench, Truck, Image as ImageIcon, WifiOff, CloudOff, 
@@ -29,11 +28,11 @@ const firebaseConfig = {
   measurementId: "G-Y2K2EH47PX"
 };
 
-// Inicialização do Firebase (CORRIGIDA PARA EVITAR TELA BRANCA NO STACKBLITZ)
+// Inicialização Segura do Firebase
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 const auth = getAuth(app);
 const db = getFirestore(app);
-const APP_ID = 'estoque-seel'; // Identificador para a estrutura de pastas
+const APP_ID = 'estoque-seel'; 
 
 // Categorias e Unidades
 const CATEGORIAS = ['Materiais', 'EPI', 'Ferramentas', 'Equipamentos', 'Outros'];
@@ -72,7 +71,7 @@ const processImage = (file: File): Promise<string> => {
 };
 
 export default function App() {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<any>(null); // <-- CORREÇÃO AQUI (Removido o tipo 'User' estrito)
   const [authLoading, setAuthLoading] = useState(true);
   const [items, setItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(false); 
@@ -80,7 +79,6 @@ export default function App() {
   const [filterCategory, setFilterCategory] = useState('Todas');
   const [filterLocation, setFilterLocation] = useState('Todos'); 
   
-  // Controle de Visualização
   const [view, setView] = useState('list'); 
   const [displayMode, setDisplayMode] = useState('grid'); 
   const [currentItem, setCurrentItem] = useState<any>(null);
@@ -88,12 +86,8 @@ export default function App() {
   
   const [isLocationManagerOpen, setIsLocationManagerOpen] = useState(false);
 
-  // Monitorização de Internet e Persistência
+  // Monitorização de Internet
   useEffect(() => {
-    try {
-      enableIndexedDbPersistence(db).catch((err) => console.warn("Persistência offline:", err));
-    } catch (e) { console.log(e); }
-
     const handleOnline = () => setIsOffline(false);
     const handleOffline = () => setIsOffline(true);
     window.addEventListener('online', handleOnline);
@@ -105,7 +99,7 @@ export default function App() {
     };
   }, []);
 
-  // Monitorização do Utilizador Logado
+  // Monitorização do Utilizador
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
@@ -114,7 +108,7 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // Busca de Dados (SEPARADO POR UTILIZADOR)
+  // Busca de Dados
   useEffect(() => {
     if (!user) {
       setItems([]);
@@ -127,14 +121,14 @@ export default function App() {
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const fetchedItems = snapshot.docs.map(doc => ({
-        id: doc.id, ...doc.data(), isPendingSync: doc.metadata.hasPendingWrites
+        id: doc.id, ...doc.data()
       }));
       fetchedItems.sort((a, b) => a.nome.localeCompare(b.nome));
       setItems(fetchedItems);
       setLoading(false);
     }, (error) => {
       console.error("Erro ao buscar dados:", error);
-      alert("Erro ao ler dados. Verifique as regras do Firestore para permitir leitura na pasta do utilizador.");
+      alert("Sua conta ainda não tem permissão para ler o estoque. Verifique as regras do banco de dados.");
       setLoading(false);
     });
     return () => unsubscribe();
@@ -255,7 +249,6 @@ export default function App() {
     }
   };
 
-  // ECRÃ DE CARREGAMENTO INICIAL
   if (authLoading) {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center">
@@ -265,7 +258,6 @@ export default function App() {
     );
   }
 
-  // ECRÃ DE LOGIN ATUALIZADO (RESTRITO AO DOMÍNIO E COM LOGÓTIPO .PNG)
   if (!user) {
     return <AuthScreen colors={COLORS} auth={auth} />;
   }
@@ -273,12 +265,11 @@ export default function App() {
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-800 pb-20">
       {isOffline && (
-        <div className="bg-red-600 text-white px-4 py-2 flex items-center justify-center gap-2 text-sm font-bold shadow-md z-50 relative">
-          <WifiOff className="w-4 h-4" /> Modo Offline Ativo. As alterações serão salvas no seu aparelho.
+        <div className="bg-amber-500 text-white px-4 py-2 flex items-center justify-center gap-2 text-sm font-bold shadow-md z-50 relative">
+          <WifiOff className="w-4 h-4" /> Sem conexão à internet.
         </div>
       )}
 
-      {/* HEADER DA SEEL COM LOGOUT */}
       <header className="shadow-lg sticky top-0 z-10 border-b-4 border-black/20" style={{ backgroundColor: COLORS.blue }}>
         <div className="max-w-5xl mx-auto px-4 py-3 flex justify-between items-center">
           <div className="flex flex-col select-none cursor-pointer" onClick={() => { setView('list'); setCurrentItem(null); }}>
@@ -290,7 +281,7 @@ export default function App() {
           </div>
           
           <div className="flex items-center gap-1 sm:gap-2">
-            <span className="text-xs text-blue-200 hidden sm:block mr-2 font-medium truncate max-w-[150px]">{user.email}</span>
+            <span className="text-xs text-blue-200 hidden sm:block mr-2 font-medium truncate max-w-[150px]">{user?.email}</span>
             {view === 'list' && (
               <button onClick={exportToExcel} className="text-white hover:text-yellow-300 p-2 rounded-full hover:bg-white/10 transition-colors" title="Exportar Planilha Excel">
                 <Download className="w-6 h-6" />
@@ -317,13 +308,11 @@ export default function App() {
             
             <div className="flex flex-col bg-white p-4 rounded-xl shadow-sm border border-slate-200 gap-4">
               <div className="flex flex-col md:flex-row gap-4 justify-between items-center w-full">
-                {/* BUSCA DE TEXTO */}
                 <div className="relative w-full md:flex-1">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5" />
                   <input type="text" placeholder="Pesquisar material..." className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-xl focus:outline-none focus:border-blue-700 transition-colors text-lg" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
                 </div>
 
-                {/* FILTRO DE ALMOXARIFADO COM BOTÃO DE GESTÃO */}
                 <div className="relative w-full md:w-80 flex gap-2">
                   <div className="relative flex-1">
                     <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5" />
@@ -343,14 +332,12 @@ export default function App() {
                   </button>
                 </div>
                 
-                {/* BOTÕES LISTA/GRID */}
                 <div className="flex bg-slate-100 p-1.5 rounded-xl shrink-0">
                   <button onClick={() => setDisplayMode('grid')} className={`p-2.5 rounded-lg ${displayMode === 'grid' ? 'bg-white shadow text-blue-900' : 'text-slate-500'}`} title="Ver em Miniaturas"><LayoutGrid className="w-6 h-6" /></button>
                   <button onClick={() => setDisplayMode('list_view')} className={`p-2.5 rounded-lg ${displayMode === 'list_view' ? 'bg-white shadow text-blue-900' : 'text-slate-500'}`} title="Ver em Lista"><List className="w-6 h-6" /></button>
                 </div>
               </div>
 
-              {/* FILTRO DE CATEGORIAS */}
               <div className="flex gap-2 w-full overflow-x-auto pb-2 custom-scrollbar">
                 {['Todas', ...CATEGORIAS].map(cat => (
                   <button 
@@ -365,7 +352,6 @@ export default function App() {
               </div>
             </div>
 
-            {/* LISTA DE MATERIAIS */}
             <div className={`bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden ${displayMode === 'grid' ? 'bg-transparent border-none shadow-none' : 'p-2'}`}>
               {filteredItems.length === 0 ? (
                 <div className="p-16 text-center flex flex-col items-center justify-center text-slate-400 bg-white rounded-xl border border-slate-200">
@@ -378,7 +364,6 @@ export default function App() {
                   {filteredItems.map(item => {
                     const isLowStock = Number(item.quantidade) <= Number(item.estoqueMinimo || 0);
 
-                    // --- VISUALIZAÇÃO EM MINIATURAS (GRID AUMENTADA) ---
                     if (displayMode === 'grid') {
                       return (
                         <div 
@@ -386,10 +371,8 @@ export default function App() {
                           className="group bg-white border border-slate-200 rounded-2xl overflow-hidden hover:shadow-xl transition-all cursor-pointer relative flex flex-col h-full transform hover:-translate-y-1"
                           onClick={() => { setCurrentItem(item); setView('details'); }}
                         >
-                          {item.isPendingSync && <div className="absolute top-2 left-2 z-10 text-amber-500 bg-white/90 backdrop-blur rounded-full p-1.5 shadow"><CloudOff className="w-5 h-5" /></div>}
                           {isLowStock && <div className="absolute top-2 right-2 z-10 bg-red-600 text-white text-xs font-bold px-2 py-1 rounded-md shadow-md animate-pulse">BAIXO</div>}
                           
-                          {/* Área da Imagem Maior */}
                           <div className="w-full h-48 sm:h-56 bg-slate-100 flex items-center justify-center relative border-b border-slate-100">
                             {item.foto ? (
                                <img src={item.foto} alt={item.nome} className="w-full h-full object-cover" />
@@ -416,7 +399,6 @@ export default function App() {
                                   </span>
                                </div>
                                
-                               {/* Botões Rápidos */}
                                <div className="flex items-center bg-slate-100 rounded-lg border border-slate-200">
                                  <button onClick={(e) => handleQuickUpdate(e, item, -1)} className="p-2 hover:text-red-600 hover:bg-slate-200 rounded-l-lg transition-colors"><Minus className="w-5 h-5" /></button>
                                  <div className="w-px h-6 bg-slate-300"></div>
@@ -428,15 +410,12 @@ export default function App() {
                       );
                     }
 
-                    // --- VISUALIZAÇÃO EM LISTA ---
                     return (
                       <div 
                         key={item.id} 
                         className="group hover:bg-slate-50 transition-colors cursor-pointer relative border border-slate-200 rounded-xl p-4 flex items-center justify-between gap-4 shadow-sm"
                         onClick={() => { setCurrentItem(item); setView('details'); }}
                       >
-                        {item.isPendingSync && <div className="absolute top-2 right-2 text-amber-500 bg-amber-50 rounded-full p-1"><CloudOff className="w-4 h-4" /></div>}
-                        
                         <div className="flex items-center gap-4 flex-1 min-w-0">
                           <div className="shrink-0 bg-slate-100 border overflow-hidden flex items-center justify-center w-16 h-16 rounded-xl">
                             {item.foto ? <img src={item.foto} alt={item.nome} className="w-full h-full object-cover" /> : <ImageIcon className="w-8 h-8 text-slate-300" />}
@@ -477,7 +456,6 @@ export default function App() {
           </div>
         )}
 
-        {/* DETALHES COMPLETOS DO ITEM */}
         {view === 'details' && currentItem && (
           <div className="animate-fade-in bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden max-w-3xl mx-auto">
              {currentItem.foto && <div className="w-full h-80 bg-slate-100 border-b border-slate-200"><img src={currentItem.foto} className="w-full h-full object-contain" /></div>}
@@ -542,7 +520,6 @@ export default function App() {
           </div>
         )}
 
-        {/* FORMULÁRIO DE CADASTRO/EDIÇÃO */}
         {view === 'form' && (
           <ItemForm 
             item={currentItem} 
@@ -554,7 +531,6 @@ export default function App() {
         )}
       </main>
 
-      {/* MODAL DE GERENCIAMENTO DE ALMOXARIFADOS */}
       <LocationManagerModal 
          isOpen={isLocationManagerOpen} 
          onClose={() => setIsLocationManagerOpen(false)} 
@@ -569,7 +545,7 @@ export default function App() {
 }
 
 // ==========================================
-// COMPONENTE: TELA DE LOGIN (ATUALIZADA)
+// COMPONENTE: TELA DE LOGIN
 // ==========================================
 function AuthScreen({ colors, auth }: any) {
   const [isLogin, setIsLogin] = useState(true);
@@ -583,7 +559,6 @@ function AuthScreen({ colors, auth }: any) {
     setLoading(true);
     setErrorMsg('');
 
-    // VALIDAÇÃO RIGOROSA: Apenas e-mails do domínio @seel.com.br
     const emailAjustado = email.toLowerCase().trim();
     if (!emailAjustado.endsWith('@seel.com.br')) {
       setErrorMsg('Acesso restrito! Apenas e-mails corporativos (@seel.com.br) são permitidos no sistema.');
@@ -617,7 +592,6 @@ function AuthScreen({ colors, auth }: any) {
     <div className="min-h-screen bg-slate-100 flex flex-col items-center justify-center p-4">
       <div className="w-full max-w-md bg-white rounded-2xl shadow-xl overflow-hidden animate-fade-in">
         <div className="p-8 pb-6 flex flex-col items-center border-b border-slate-200 bg-white">
-          {/* IMAGEM DO LOGÓTIPO QUE VOCÊ FEZ UPLOAD (AGORA .PNG) */}
           <img src="/9490.png" alt="SEEL Serviços Especiais de Engenharia" className="w-full max-w-[240px] h-auto object-contain mb-6 rounded shadow-sm" />
           <h1 className="text-slate-700 font-black text-xl tracking-wide uppercase">Acesso ao Estoque</h1>
         </div>
