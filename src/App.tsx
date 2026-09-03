@@ -269,29 +269,30 @@ export default function App() {
         </div>
       )}
 
-      <header className="shadow-lg sticky top-0 z-10 border-b-4 border-black/20" style={{ backgroundColor: COLORS.blue }}>
+      {/* HEADER ATUALIZADO COM A IMAGEM DA LOGO E NOME */}
+      <header className="shadow-lg sticky top-0 z-10 border-b-4 border-black/20 bg-white">
         <div className="max-w-5xl mx-auto px-4 py-3 flex justify-between items-center">
-          <div className="flex flex-col select-none cursor-pointer" onClick={() => { setView('list'); setCurrentItem(null); }}>
-            <div className="border-[3px] px-3 py-0.5 flex justify-center items-center" style={{ borderColor: COLORS.yellow }}>
-              <span className="font-black text-3xl sm:text-4xl tracking-widest leading-none" style={{ color: COLORS.yellow, fontFamily: 'Arial Black, Impact, sans-serif' }}>SEEL</span>
+          <div className="flex items-center gap-3 select-none cursor-pointer" onClick={() => { setView('list'); setCurrentItem(null); }}>
+            <img src="/9490.png" alt="SEEL" className="h-10 sm:h-12 w-auto object-contain" />
+            <div className="flex flex-col border-l-2 border-slate-300 pl-3">
+              <span className="font-black text-sm sm:text-base tracking-wider uppercase text-slate-800 leading-tight">Controle de Estoque</span>
+              <span className="text-[0.55rem] sm:text-[0.65rem] font-bold text-slate-500 tracking-widest">SERVIÇOS ESPECIAIS DE ENGENHARIA</span>
             </div>
-            <span className="text-[0.45rem] sm:text-[0.55rem] font-bold tracking-widest mt-1 text-center whitespace-nowrap" style={{ color: COLORS.yellow }}>CONTROLE DE ESTOQUE</span>
-            <div className="w-full h-[2px] sm:h-[3px] mt-0.5" style={{ backgroundColor: COLORS.yellow }}></div>
           </div>
           
           <div className="flex items-center gap-1 sm:gap-2">
-            <span className="text-xs text-blue-200 hidden sm:block mr-2 font-medium truncate max-w-[150px]">{user?.email}</span>
+            <span className="text-xs text-slate-600 hidden sm:block mr-2 font-medium truncate max-w-[150px]">{user?.email}</span>
             {view === 'list' && (
-              <button onClick={exportToExcel} className="text-white hover:text-yellow-300 p-2 rounded-full hover:bg-white/10 transition-colors" title="Exportar Planilha Excel">
+              <button onClick={exportToExcel} className="text-slate-700 hover:text-blue-700 p-2 rounded-full hover:bg-slate-100 transition-colors" title="Exportar Planilha Excel">
                 <Download className="w-6 h-6" />
               </button>
             )}
             {view !== 'list' ? (
-              <button onClick={() => { setView('list'); setCurrentItem(null); }} className="text-white/80 hover:text-white p-2 rounded-full hover:bg-white/10 transition-colors">
+              <button onClick={() => { setView('list'); setCurrentItem(null); }} className="text-slate-700 hover:text-slate-900 p-2 rounded-full hover:bg-slate-100 transition-colors">
                 <X className="w-7 h-7" />
               </button>
             ) : (
-              <button onClick={() => signOut(auth)} className="text-white/80 hover:text-red-400 p-2 rounded-full hover:bg-white/10 transition-colors" title="Sair da Conta">
+              <button onClick={() => signOut(auth)} className="text-slate-700 hover:text-red-600 p-2 rounded-full hover:bg-slate-100 transition-colors" title="Sair da Conta">
                 <LogOut className="w-6 h-6" />
               </button>
             )}
@@ -565,7 +566,6 @@ function AuthScreen({ colors, auth }: any) {
     }
 
     try {
-      // Faz apenas o Login. A criação de conta agora é no painel do Firebase.
       await signInWithEmailAndPassword(auth, emailAjustado, password);
     } catch (error: any) {
       console.error(error);
@@ -686,7 +686,7 @@ function LocationManagerModal({ isOpen, onClose, locations, items, db, user, app
                     <div className="flex gap-2 w-full">
                       <input value={newName} onChange={e => setNewName(e.target.value)} className="border-2 border-blue-400 p-2 rounded-lg w-full outline-none font-bold" autoFocus />
                       <button onClick={() => handleEdit(loc)} className="bg-green-600 hover:bg-green-700 text-white px-4 font-bold rounded-lg transition-colors">OK</button>
-                      <button onClick={() => setEditingLoc(null)} className="bg-slate-200 hover:bg-slate-300 text-slate-700 px-4 font-bold rounded-lg transition-colors">X</button>
+                      <button onClick={() => setEditingLoc(null)} className="bg-slate-200 hover:bg-slate-500 text-slate-700 px-4 font-bold rounded-lg transition-colors">X</button>
                     </div>
                   ) : (
                     <>
@@ -711,13 +711,19 @@ function LocationManagerModal({ isOpen, onClose, locations, items, db, user, app
 }
 
 // ==========================================
-// COMPONENTE: FORMULÁRIO DE ITENS
+// COMPONENTE: FORMULÁRIO DE ITENS (CORRIGIDO ALMOXARIFADO)
 // ==========================================
 function ItemForm({ item, onSave, onCancel, colors, locations }: any) {
   const [formData, setFormData] = useState(item || { 
     nome: '', categoria: 'Materiais', quantidade: '', unidade: 'un', estoqueMinimo: 5, status: 'Disponível', localizacao: '', observacoes: '', foto: '' 
   });
   const [isProcessingImg, setIsProcessingImg] = useState(false);
+  
+  const [isCustomLoc, setIsCustomLoc] = useState(() => {
+    if (locations.length === 0) return true;
+    if (item && item.localizacao && !locations.includes(item.localizacao)) return true;
+    return false;
+  });
 
   const handleChange = (e: any) => {
     const { name, value, type } = e.target;
@@ -738,6 +744,8 @@ function ItemForm({ item, onSave, onCancel, colors, locations }: any) {
   const handleSubmit = (e: any) => {
     e.preventDefault();
     if (!formData.nome.trim()) return alert("O Nome do Item é obrigatório.");
+    if (!formData.localizacao.trim()) return alert("O Almoxarifado / Localização é obrigatório.");
+    
     const payload = {
       ...formData,
       quantidade: formData.quantidade === '' ? 0 : Number(formData.quantidade),
@@ -763,20 +771,66 @@ function ItemForm({ item, onSave, onCancel, colors, locations }: any) {
         
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div><label className="block text-sm font-bold text-slate-500 mb-2 uppercase tracking-wide">Nome do Item *</label><input required type="text" name="nome" value={formData.nome} onChange={handleChange} className="w-full px-5 py-4 border-2 border-slate-200 rounded-xl outline-none focus:border-blue-600 transition-colors text-lg font-bold text-slate-800" placeholder="Ex: Cimento CP II..." /></div>
-          <div><label className="block text-sm font-bold text-slate-500 mb-2 uppercase tracking-wide">Categoria</label><select name="categoria" value={formData.categoria} onChange={handleChange} className="w-full px-5 py-4 border-2 border-slate-200 rounded-xl bg-white outline-none focus:border-blue-600 transition-colors text-lg font-bold text-slate-700">{CATEGORIAS.map(c => <option key={c}>{c}</option>)}</select></div>
+          <div><label className="block text-sm font-bold text-slate-500 mb-2 uppercase tracking-wide">Categoria *</label><select required name="categoria" value={formData.categoria} onChange={handleChange} className="w-full px-5 py-4 border-2 border-slate-200 rounded-xl bg-white outline-none focus:border-blue-600 transition-colors text-lg font-bold text-slate-700">{CATEGORIAS.map(c => <option key={c}>{c}</option>)}</select></div>
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-6">
           <div><label className="block text-sm font-black text-blue-800 mb-2 uppercase tracking-wide">QTD EM ESTOQUE</label><input type="number" name="quantidade" value={formData.quantidade} onChange={handleChange} className="w-full px-5 py-4 border-2 border-blue-400 bg-blue-50 rounded-xl font-black outline-none focus:border-blue-700 transition-colors text-2xl text-blue-900" placeholder="0" /></div>
           <div><label className="block text-sm font-bold text-slate-500 mb-2 uppercase tracking-wide">Unidade</label><select name="unidade" value={formData.unidade} onChange={handleChange} className="w-full px-5 py-4 border-2 border-slate-200 rounded-xl bg-white outline-none focus:border-blue-600 transition-colors text-lg font-bold text-slate-700">{UNIDADES.map(u => <option key={u}>{u}</option>)}</select></div>
           <div><label className="block text-sm font-black text-red-700 mb-2 uppercase tracking-wide" title="Sistema avisará quando chegar neste valor">MÍNIMO IDEAL</label><input type="number" name="estoqueMinimo" value={formData.estoqueMinimo} onChange={handleChange} className="w-full px-5 py-4 border-2 border-red-300 bg-red-50 rounded-xl font-black outline-none focus:border-red-600 transition-colors text-2xl text-red-900" placeholder="0" /></div>
-          <div><label className="block text-sm font-bold text-slate-500 mb-2 uppercase tracking-wide">Estado</label><select name="status" value={formData.status} onChange={handleChange} className="w-full px-5 py-4 border-2 border-slate-200 rounded-xl bg-white outline-none focus:border-blue-600 transition-colors text-lg font-bold text-slate-700">{STATUS.map(s => <option key={s}>{s}</option>)}</select></div>
+          <div><label className="block text-sm font-bold text-slate-500 mb-2 uppercase tracking-wide">Estado *</label><select required name="status" value={formData.status} onChange={handleChange} className="w-full px-5 py-4 border-2 border-slate-200 rounded-xl bg-white outline-none focus:border-blue-600 transition-colors text-lg font-bold text-slate-700">{STATUS.map(s => <option key={s}>{s}</option>)}</select></div>
         </div>
 
         <div>
-          <label className="block text-sm font-bold text-slate-500 mb-2 uppercase tracking-wide">Almoxarifado / Localização na Obra</label>
-          <input type="text" name="localizacao" list="almoxarifados-lista" value={formData.localizacao} onChange={handleChange} className="w-full px-5 py-4 border-2 border-slate-200 rounded-xl outline-none focus:border-blue-600 transition-colors text-lg font-bold text-slate-800" placeholder="Digite ou selecione um local..." autoComplete="off" />
-          <datalist id="almoxarifados-lista">{locations && locations.map((loc: string) => <option key={loc} value={loc} />)}</datalist>
+          <label className="block text-sm font-bold text-slate-500 mb-2 uppercase tracking-wide">Almoxarifado / Localização na Obra *</label>
+          
+          {isCustomLoc ? (
+            <div className="flex gap-2">
+              <input 
+                type="text" 
+                name="localizacao" 
+                required
+                value={formData.localizacao} 
+                onChange={handleChange} 
+                className="flex-1 px-5 py-4 border-2 border-blue-400 bg-blue-50 rounded-xl outline-none focus:border-blue-600 transition-colors text-lg font-bold text-slate-800" 
+                placeholder="Digite o nome do Almoxarifado..." 
+                autoComplete="off" 
+                autoFocus
+              />
+              {locations.length > 0 && (
+                <button 
+                  type="button" 
+                  onClick={() => {
+                    setIsCustomLoc(false);
+                    setFormData((prev: any) => ({ ...prev, localizacao: locations[0] || '' }));
+                  }} 
+                  className="px-4 border-2 border-slate-200 text-slate-500 rounded-xl hover:bg-slate-100 transition-colors font-bold"
+                  title="Voltar para a lista de locais"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              )}
+            </div>
+          ) : (
+            <select 
+              name="localizacao" 
+              required
+              value={formData.localizacao} 
+              onChange={(e) => {
+                if (e.target.value === 'NOVO_LOCAL') {
+                  setIsCustomLoc(true);
+                  setFormData((prev: any) => ({ ...prev, localizacao: '' }));
+                } else {
+                  handleChange(e);
+                }
+              }}
+              className="w-full px-5 py-4 border-2 border-slate-200 rounded-xl bg-white outline-none focus:border-blue-600 transition-colors text-lg font-bold text-slate-800 cursor-pointer"
+            >
+              <option value="">Selecione o Almoxarifado...</option>
+              {locations.map((loc: string) => <option key={loc} value={loc}>{loc}</option>)}
+              <option value="NOVO_LOCAL" className="font-bold text-blue-700 bg-blue-50">➕ Adicionar Novo Local...</option>
+            </select>
+          )}
         </div>
 
         <div><label className="block text-sm font-bold text-slate-500 mb-2 uppercase tracking-wide">Observações (Opcional)</label><textarea name="observacoes" value={formData.observacoes} onChange={handleChange} className="w-full px-5 py-4 border-2 border-slate-200 rounded-xl resize-none outline-none focus:border-blue-600 transition-colors text-lg font-medium text-slate-700" rows={3} placeholder="Condição do material, nome do responsável..."></textarea></div>
