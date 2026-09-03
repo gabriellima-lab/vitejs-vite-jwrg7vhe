@@ -11,7 +11,7 @@ import { 
 } from 'firebase/firestore';
 import { 
   Package, Plus, Search, Edit2, Trash2, Camera, X, Save, HardHat, Wrench, Truck, Image as ImageIcon, WifiOff, CloudOff, 
-  Download, LayoutGrid, List, AlertTriangle, Minus, MapPin, Settings, LogOut, Lock, User as UserIcon
+  Download, LayoutGrid, List, AlertTriangle, Minus, MapPin, Settings, LogOut, Lock, User as UserIcon, Clock, ArrowRightLeft, ArrowDownRight, ArrowUpRight
 } from 'lucide-react';
 
 // ==========================================
@@ -72,18 +72,26 @@ const processImage = (file: File): Promise<string> => {
 export default function App() {
   const [user, setUser] = useState<any>(null); 
   const [authLoading, setAuthLoading] = useState(true);
+  
+  // Dados
   const [items, setItems] = useState<any[]>([]);
+  const [transactions, setTransactions] = useState<any[]>([]);
   const [loading, setLoading] = useState(false); 
+  
+  // Filtros
   const [searchTerm, setSearchTerm] = useState('');
   const [filterCategory, setFilterCategory] = useState('Todas');
   const [filterLocation, setFilterLocation] = useState('Todos'); 
   
+  // View States
   const [view, setView] = useState('list'); 
   const [displayMode, setDisplayMode] = useState('grid'); 
   const [currentItem, setCurrentItem] = useState<any>(null);
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
   
+  // Modais
   const [isLocationManagerOpen, setIsLocationManagerOpen] = useState(false);
+  const [transactionIntent, setTransactionIntent] = useState<{item: any, type: 'Entrada' | 'Saída'} | null>(null);
 
   // Monitorização de Internet
   useEffect(() => {
@@ -91,7 +99,6 @@ export default function App() {
     const handleOffline = () => setIsOffline(true);
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
-
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
@@ -107,32 +114,39 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // Busca de Dados
+  // Busca de Dados (Itens e Histórico de Transações)
   useEffect(() => {
     if (!user) {
       setItems([]);
+      setTransactions([]);
       return;
     }
     setLoading(true);
     
+    // 1. Busca Inventário
     const inventoryRef = collection(db, 'artifacts', APP_ID, 'users', user.uid, 'inventory');
-    const q = query(inventoryRef);
-
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const fetchedItems = snapshot.docs.map(doc => ({
-        id: doc.id, ...doc.data()
-      }));
+    const unsubscribeInv = onSnapshot(query(inventoryRef), (snapshot) => {
+      const fetchedItems = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       fetchedItems.sort((a, b) => a.nome.localeCompare(b.nome));
       setItems(fetchedItems);
       setLoading(false);
     }, (error) => {
-      console.error("Erro ao buscar dados:", error);
-      alert("A sua conta ainda não tem permissão para ler o estoque. Verifique as regras do banco de dados.");
+      console.error("Erro inventário:", error);
       setLoading(false);
     });
-    return () => unsubscribe();
+
+    // 2. Busca Transações (Histórico)
+    const txRef = collection(db, 'artifacts', APP_ID, 'users', user.uid, 'transactions');
+    const unsubscribeTx = onSnapshot(query(txRef), (snapshot) => {
+      const fetchedTxs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      fetchedTxs.sort((a, b) => (b.dataHora?.toMillis() || Date.now()) - (a.dataHora?.toMillis() || Date.now()));
+      setTransactions(fetchedTxs);
+    });
+
+    return () => { unsubscribeInv(); unsubscribeTx(); };
   }, [user]);
 
+  // Sincroniza o item atual se for alterado por fora (ex: transação)
   useEffect(() => {
     if (currentItem) {
       const updatedItem = items.find(i => i.id === currentItem.id);
@@ -153,49 +167,69 @@ export default function App() {
                             (item.localizacao && item.localizacao.toLowerCase().includes(searchTerm.toLowerCase()));
       const matchesCategory = filterCategory === 'Todas' || item.categoria === filterCategory;
       const matchesLocation = filterLocation === 'Todos' || item.localizacao === filterLocation;
-      
       return matchesSearch && matchesCategory && matchesLocation;
     });
   }, [items, searchTerm, filterCategory, filterLocation]);
 
+  // FUNÇÃO CORRIGIDA DE DOWNLOAD (FORÇA O NAVEGADOR A BAIXAR)
+  const downloadBlob = (content: string, filename: string) => {
+    const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url; 
+    link.download = filename; 
+    link.style.display = 'none'; // Esconde o link
+    document.body.appendChild(link); // Anexa na página (obrigatório em muitos navegadores)
+    link.click(); // Força o clique
+    document.body.removeChild(link); // Limpa o link da página
+    URL.revokeObjectURL(url); // Liberta a memória
+  };
+
+  // PLANILHA 1: ESTOQUE ATUAL
   const exportToExcel = () => {
     const headers = ['NOME,CATEGORIA,QUANTIDADE,UNIDADE,ESTOQUE MINIMO,STATUS,ALMOXARIFADO,OBSERVACOES\n'];
     const rows = items.map(item => {
       const obs = item.observacoes ? item.observacoes.replace(/(\r\n|\n|\r)/gm, " ") : "";
       return `"${item.nome}","${item.categoria}",${item.quantidade},"${item.unidade}",${item.estoqueMinimo || 0},"${item.status}","${item.localizacao}","${obs}"`;
     });
-    
     const csvContent = "\uFEFF" + headers + rows.join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `Estoque_SEEL_${user?.email?.split('@')[0]}_${new Date().toLocaleDateString('pt-BR').replace(/\//g, '-')}.csv`;
-    link.click();
+    downloadBlob(csvContent, `Estoque_Atual_SEEL_${new Date().toLocaleDateString('pt-BR').replace(/\//g, '-')}.csv`);
+  };
+
+  // PLANILHA 2: HISTÓRICO DE MOVIMENTAÇÕES
+  const exportTransactionsToExcel = () => {
+    const headers = ['DATA HORA,TIPO MOVIMENTACAO,ITEM,QTD MOVIMENTADA,RESPONSAVEL,ALMOXARIFADO,OBSERVACOES\n'];
+    const rows = transactions.map(tx => {
+      const dateObj = tx.dataHora ? new Date(tx.dataHora.seconds * 1000) : new Date();
+      const dateStr = dateObj.toLocaleString('pt-BR');
+      const obs = tx.observacoes ? tx.observacoes.replace(/(\r\n|\n|\r)/gm, " ") : "";
+      return `"${dateStr}","${tx.tipo}","${tx.itemName}",${tx.quantidade},"${tx.responsavel || ''}","${tx.localizacao || ''}","${obs}"`;
+    });
+    const csvContent = "\uFEFF" + headers + rows.join('\n');
+    downloadBlob(csvContent, `Relatorio_Movimentacoes_SEEL_${new Date().toLocaleDateString('pt-BR').replace(/\//g, '-')}.csv`);
   };
 
   const handleSaveItem = async (formData: any) => {
-    if (!user) {
-      alert("Sessão expirada. Faça login novamente.");
-      return;
-    }
+    if (!user) return alert("Sessão expirada.");
     try {
+      const isNew = !currentItem || !currentItem.id;
       const inventoryRef = collection(db, 'artifacts', APP_ID, 'users', user.uid, 'inventory');
-      const payload = { ...formData, atualizadoPor: user.uid, ultimaAtualizacao: serverTimestamp() };
-
-      if (currentItem && currentItem.id) {
-        const docRef = doc(db, 'artifacts', APP_ID, 'users', user.uid, 'inventory', currentItem.id);
-        await updateDoc(docRef, payload);
+      
+      let itemId = currentItem?.id;
+      if (isNew) {
+        const newDoc = await addDoc(inventoryRef, { ...formData, criadoEm: serverTimestamp(), atualizadoPor: user.uid, ultimaAtualizacao: serverTimestamp() });
+        itemId = newDoc.id;
+        if (Number(formData.quantidade) > 0) {
+          await addDoc(collection(db, 'artifacts', APP_ID, 'users', user.uid, 'transactions'), {
+            itemId: itemId, itemName: formData.nome, tipo: 'Entrada Inicial', quantidade: Number(formData.quantidade),
+            responsavel: 'Administrador (Criação)', localizacao: formData.localizacao, dataHora: serverTimestamp()
+          });
+        }
       } else {
-        payload.criadoEm = serverTimestamp();
-        await addDoc(inventoryRef, payload);
+        await updateDoc(doc(db, 'artifacts', APP_ID, 'users', user.uid, 'inventory', itemId), { ...formData, atualizadoPor: user.uid, ultimaAtualizacao: serverTimestamp() });
       }
-      setView('list'); 
-      setCurrentItem(null);
-    } catch (error: any) { 
-      console.error("Erro ao salvar:", error);
-      alert("ERRO AO SALVAR: O Firebase bloqueou a gravação. Verifique as Regras de Utilizador.");
-    }
+      setView('list'); setCurrentItem(null);
+    } catch (error: any) { alert("ERRO AO SALVAR. Verifique permissões."); }
   };
 
   const handleDeleteItem = async (id: string) => {
@@ -203,30 +237,31 @@ export default function App() {
     try {
       await deleteDoc(doc(db, 'artifacts', APP_ID, 'users', user.uid, 'inventory', id));
       if (currentItem && currentItem.id === id) setView('list');
-    } catch (error) { 
-      alert("Erro ao excluir.");
-    }
+    } catch (error) { alert("Erro ao excluir."); }
   };
 
-  const handleQuickUpdate = async (e: any, item: any, change: number) => {
-    e.stopPropagation(); 
-    if (!user) return;
+  const executeTransaction = async (quantidade: number, responsavel: string, observacoes: string) => {
+    if (!user || !transactionIntent) return;
+    const item = transactionIntent.item;
+    const tipo = transactionIntent.type;
     
-    const newQuantity = Math.max(0, Number(item.quantidade) + change);
-    if (currentItem && currentItem.id === item.id) {
-      setCurrentItem({ ...currentItem, quantidade: newQuantity });
-    }
+    const novaQuantidade = tipo === 'Entrada' ? Number(item.quantidade) + Number(quantidade) : Number(item.quantidade) - Number(quantidade);
+    if (novaQuantidade < 0) { alert('Atenção: A quantidade de saída não pode ser maior que o estoque atual!'); return; }
 
     try {
-      const docRef = doc(db, 'artifacts', APP_ID, 'users', user.uid, 'inventory', item.id);
-      await updateDoc(docRef, {
-        quantidade: newQuantity,
-        atualizadoPor: user.uid,
-        ultimaAtualizacao: serverTimestamp()
+      const batch = writeBatch(db);
+      const itemRef = doc(db, 'artifacts', APP_ID, 'users', user.uid, 'inventory', item.id);
+      batch.update(itemRef, { quantidade: novaQuantidade, ultimaAtualizacao: serverTimestamp(), atualizadoPor: user.uid });
+      
+      const txRef = doc(collection(db, 'artifacts', APP_ID, 'users', user.uid, 'transactions'));
+      batch.set(txRef, {
+        itemId: item.id, itemName: item.nome, tipo: tipo, quantidade: Number(quantidade),
+        responsavel: responsavel.trim(), observacoes: observacoes.trim(), localizacao: item.localizacao, dataHora: serverTimestamp()
       });
-    } catch (error) {
-      console.error("Erro:", error);
-    }
+
+      await batch.commit();
+      setTransactionIntent(null);
+    } catch (error) { console.error("Erro na transação:", error); alert("Falha ao registrar movimentação."); }
   };
 
   const getCategoryIcon = (category: string) => {
@@ -248,29 +283,25 @@ export default function App() {
     }
   };
 
-  if (authLoading) {
-    return (
-      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-4 mb-4" style={{ borderColor: COLORS.blue }}></div>
-        <p className="text-slate-500 font-bold animate-pulse">Acedendo ao sistema...</p>
-      </div>
-    );
-  }
+  if (authLoading) return (
+    <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center">
+      <div className="animate-spin rounded-full h-12 w-12 border-b-4 mb-4" style={{ borderColor: COLORS.blue }}></div>
+      <p className="text-slate-500 font-bold animate-pulse">Acedendo ao sistema...</p>
+    </div>
+  );
 
-  if (!user) {
-    return <AuthScreen colors={COLORS} auth={auth} />;
-  }
+  if (!user) return <AuthScreen colors={COLORS} auth={auth} />;
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-800 pb-20">
       {isOffline && (
         <div className="bg-amber-500 text-white px-4 py-2 flex items-center justify-center gap-2 text-sm font-bold shadow-md z-50 relative">
-          <WifiOff className="w-4 h-4" /> Sem ligação à internet.
+          <WifiOff className="w-4 h-4" /> Sem ligação à internet. O Histórico pode não atualizar de imediato.
         </div>
       )}
 
-      {/* HEADER ATUALIZADO COM A IMAGEM DA LOGO E NOME */}
-      <header className="shadow-lg sticky top-0 z-10 border-b-4 border-black/20 bg-white">
+      {/* HEADER CORPORATIVO DA SEEL */}
+      <header className="shadow-md sticky top-0 z-10 border-b-4 bg-white" style={{ borderColor: COLORS.yellow }}>
         <div className="max-w-5xl mx-auto px-4 py-3 flex justify-between items-center">
           <div className="flex items-center gap-3 select-none cursor-pointer" onClick={() => { setView('list'); setCurrentItem(null); }}>
             <img src="/9490.png" alt="SEEL" className="h-10 sm:h-12 w-auto object-contain" />
@@ -281,18 +312,28 @@ export default function App() {
           </div>
           
           <div className="flex items-center gap-1 sm:gap-2">
-            <span className="text-xs text-slate-600 hidden sm:block mr-2 font-medium truncate max-w-[150px]">{user?.email}</span>
             {view === 'list' && (
-              <button onClick={exportToExcel} className="text-slate-700 hover:text-blue-700 p-2 rounded-full hover:bg-slate-100 transition-colors" title="Exportar Planilha Excel">
-                <Download className="w-6 h-6" />
-              </button>
+              <>
+                {/* Botões para Desktop */}
+                <button onClick={exportTransactionsToExcel} className="hidden md:flex items-center gap-2 text-slate-600 hover:text-blue-700 bg-slate-100 hover:bg-slate-200 px-3 py-2 rounded-lg font-bold transition-colors text-sm border border-slate-200" title="Relatório de Movimentações">
+                  <Clock className="w-5 h-5 text-blue-600" /> Histórico
+                </button>
+                <button onClick={exportToExcel} className="hidden md:flex items-center gap-2 text-slate-600 hover:text-green-700 bg-slate-100 hover:bg-slate-200 px-3 py-2 rounded-lg font-bold transition-colors text-sm border border-slate-200" title="Relatório do Estoque Atual">
+                  <Download className="w-5 h-5 text-green-600" /> Planilha
+                </button>
+                
+                {/* Botões para Mobile */}
+                <button onClick={exportTransactionsToExcel} className="md:hidden text-slate-700 hover:text-blue-700 p-2 rounded-full hover:bg-slate-100" title="Relatório de Movimentações"><Clock className="w-6 h-6 text-blue-600" /></button>
+                <button onClick={exportToExcel} className="md:hidden text-slate-700 hover:text-green-700 p-2 rounded-full hover:bg-slate-100" title="Relatório de Estoque Atual"><Download className="w-6 h-6 text-green-600" /></button>
+              </>
             )}
+
             {view !== 'list' ? (
-              <button onClick={() => { setView('list'); setCurrentItem(null); }} className="text-slate-700 hover:text-slate-900 p-2 rounded-full hover:bg-slate-100 transition-colors">
+              <button onClick={() => { setView('list'); setCurrentItem(null); }} className="text-slate-700 hover:text-slate-900 p-2 rounded-full hover:bg-slate-200 bg-slate-100 transition-colors ml-2">
                 <X className="w-7 h-7" />
               </button>
             ) : (
-              <button onClick={() => signOut(auth)} className="text-slate-700 hover:text-red-600 p-2 rounded-full hover:bg-slate-100 transition-colors" title="Sair da Conta">
+              <button onClick={() => signOut(auth)} className="text-slate-500 hover:text-red-600 p-2 rounded-full hover:bg-red-50 transition-colors ml-2" title="Sair da Conta">
                 <LogOut className="w-6 h-6" />
               </button>
             )}
@@ -400,9 +441,9 @@ export default function App() {
                                </div>
                                
                                <div className="flex items-center bg-slate-100 rounded-lg border border-slate-200">
-                                 <button onClick={(e) => handleQuickUpdate(e, item, -1)} className="p-2 hover:text-red-600 hover:bg-slate-200 rounded-l-lg transition-colors"><Minus className="w-5 h-5" /></button>
+                                 <button onClick={(e) => { e.stopPropagation(); setTransactionIntent({item, type: 'Saída'}); }} className="p-2 hover:text-red-600 hover:bg-red-100 rounded-l-lg transition-colors" title="Registrar Saída"><Minus className="w-5 h-5" /></button>
                                  <div className="w-px h-6 bg-slate-300"></div>
-                                 <button onClick={(e) => handleQuickUpdate(e, item, 1)} className="p-2 hover:text-green-600 hover:bg-slate-200 rounded-r-lg transition-colors"><Plus className="w-5 h-5" /></button>
+                                 <button onClick={(e) => { e.stopPropagation(); setTransactionIntent({item, type: 'Entrada'}); }} className="p-2 hover:text-green-600 hover:bg-green-100 rounded-r-lg transition-colors" title="Registrar Entrada"><Plus className="w-5 h-5" /></button>
                                </div>
                             </div>
                           </div>
@@ -435,12 +476,12 @@ export default function App() {
 
                         <div className="flex items-center gap-6">
                            <div className="flex items-center bg-slate-100 rounded-xl border border-slate-200 p-1">
-                             <button onClick={(e) => handleQuickUpdate(e, item, -1)} className="p-2 text-slate-600 hover:text-red-600 hover:bg-slate-200 rounded-lg transition-colors"><Minus className="w-5 h-5" /></button>
+                             <button onClick={(e) => { e.stopPropagation(); setTransactionIntent({item, type: 'Saída'}); }} className="p-2 text-slate-600 hover:text-red-600 hover:bg-red-100 rounded-lg transition-colors" title="Registrar Saída"><Minus className="w-5 h-5" /></button>
                              <div className="px-4 flex flex-col items-center min-w-[3.5rem]">
                                <span className={`font-black text-xl ${isLowStock ? 'text-red-600' : 'text-[#16507A]'}`}>{item.quantidade}</span>
                                <span className="text-[0.6rem] uppercase font-bold text-slate-500 -mt-1">{item.unidade}</span>
                              </div>
-                             <button onClick={(e) => handleQuickUpdate(e, item, 1)} className="p-2 text-slate-600 hover:text-green-600 hover:bg-slate-200 rounded-lg transition-colors"><Plus className="w-5 h-5" /></button>
+                             <button onClick={(e) => { e.stopPropagation(); setTransactionIntent({item, type: 'Entrada'}); }} className="p-2 text-slate-600 hover:text-green-600 hover:bg-green-100 rounded-lg transition-colors" title="Registrar Entrada"><Plus className="w-5 h-5" /></button>
                            </div>
                         </div>
                       </div>
@@ -450,12 +491,13 @@ export default function App() {
               )}
             </div>
 
-            <button onClick={() => { setCurrentItem(null); setView('form'); }} className="fixed bottom-6 right-6 w-16 h-16 text-white rounded-full shadow-lg flex items-center justify-center transition-all z-40" style={{ backgroundColor: COLORS.blue, border: `2px solid ${COLORS.yellow}` }}>
+            <button onClick={() => { setCurrentItem(null); setView('form'); }} className="fixed bottom-6 right-6 w-16 h-16 text-white rounded-full shadow-lg flex items-center justify-center transition-all z-40 hover:scale-105" style={{ backgroundColor: COLORS.blue, border: `2px solid ${COLORS.yellow}` }}>
               <Plus className="w-8 h-8" style={{ color: COLORS.yellow }} />
             </button>
           </div>
         )}
 
+        {/* --- ECRÃ DE DETALHES COM HISTÓRICO DE TRANSAÇÕES --- */}
         {view === 'details' && currentItem && (
           <div className="animate-fade-in bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden max-w-3xl mx-auto">
              {currentItem.foto && <div className="w-full h-80 bg-slate-100 border-b border-slate-200"><img src={currentItem.foto} className="w-full h-full object-contain" /></div>}
@@ -477,8 +519,8 @@ export default function App() {
                      <p className="text-5xl font-black" style={{ color: COLORS.blue }}>{currentItem.quantidade} <span className="text-2xl">{currentItem.unidade}</span></p>
                    </div>
                    <div className="flex flex-col gap-2">
-                      <button onClick={(e) => handleQuickUpdate(e, currentItem, 1)} className="bg-white border border-blue-200 hover:bg-blue-600 hover:text-white p-3 rounded-xl text-blue-800 transition-colors shadow-sm"><Plus className="w-6 h-6"/></button>
-                      <button onClick={(e) => handleQuickUpdate(e, currentItem, -1)} className="bg-white border border-red-200 hover:bg-red-600 hover:text-white p-3 rounded-xl text-red-800 transition-colors shadow-sm"><Minus className="w-6 h-6"/></button>
+                      <button onClick={() => setTransactionIntent({item: currentItem, type: 'Entrada'})} className="bg-white border border-blue-200 hover:bg-green-600 hover:text-white p-3 rounded-xl text-green-700 transition-colors shadow-sm" title="Registrar Entrada"><Plus className="w-6 h-6"/></button>
+                      <button onClick={() => setTransactionIntent({item: currentItem, type: 'Saída'})} className="bg-white border border-red-200 hover:bg-red-600 hover:text-white p-3 rounded-xl text-red-700 transition-colors shadow-sm" title="Registrar Saída"><Minus className="w-6 h-6"/></button>
                    </div>
                  </div>
                  <div className="bg-slate-50 p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-center">
@@ -512,8 +554,40 @@ export default function App() {
                 </div>
                )}
 
-               <div className="flex justify-between items-center pt-8 border-t border-slate-200">
-                  <button onClick={() => handleDeleteItem(currentItem.id)} className="flex items-center gap-2 text-red-600 font-bold hover:bg-red-50 px-6 py-3 rounded-xl transition-colors"><Trash2 className="w-6 h-6" /> Excluir Item</button>
+               {/* HISTÓRICO ESPECÍFICO DO ITEM */}
+               <div className="mb-8">
+                 <h3 className="text-lg font-black text-slate-800 border-b border-slate-200 pb-3 mb-4 flex items-center gap-2">
+                   <Clock className="w-5 h-5 text-blue-600" /> Últimas Movimentações
+                 </h3>
+                 <div className="space-y-3">
+                   {transactions.filter(t => t.itemId === currentItem.id).length === 0 ? (
+                     <p className="text-slate-400 italic font-medium p-4 bg-slate-50 rounded-lg text-center border border-dashed">Nenhuma movimentação registada para este item.</p>
+                   ) : (
+                     transactions.filter(t => t.itemId === currentItem.id).slice(0, 10).map((tx, idx) => (
+                       <div key={tx.id || idx} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-slate-50 border border-slate-200 rounded-xl gap-3 hover:bg-slate-100 transition-colors">
+                         <div className="flex items-center gap-3">
+                           <div className={`p-2 rounded-lg ${tx.tipo === 'Entrada' || tx.tipo === 'Entrada Inicial' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                             {tx.tipo === 'Entrada' || tx.tipo === 'Entrada Inicial' ? <ArrowDownRight className="w-5 h-5" /> : <ArrowUpRight className="w-5 h-5" />}
+                           </div>
+                           <div>
+                             <p className="font-bold text-slate-800 text-sm">
+                               {tx.tipo.toUpperCase()}: <span className={tx.tipo.includes('Entrada') ? 'text-green-600' : 'text-red-600'}>{tx.quantidade} {currentItem.unidade}</span>
+                             </p>
+                             <p className="text-xs font-bold text-slate-500 uppercase mt-0.5">Resp: <span className="text-slate-700">{tx.responsavel || 'Não informado'}</span></p>
+                           </div>
+                         </div>
+                         <div className="text-left sm:text-right">
+                           <p className="text-xs font-bold text-slate-400">{tx.dataHora ? new Date(tx.dataHora.seconds * 1000).toLocaleString('pt-BR') : 'Agora mesmo'}</p>
+                           {tx.observacoes && <p className="text-xs text-slate-500 italic truncate max-w-[200px] mt-1" title={tx.observacoes}>"{tx.observacoes}"</p>}
+                         </div>
+                       </div>
+                     ))
+                   )}
+                 </div>
+               </div>
+
+               <div className="flex justify-between items-center pt-6 border-t border-slate-200">
+                  <button onClick={() => handleDeleteItem(currentItem.id)} className="flex items-center gap-2 text-red-600 font-bold hover:bg-red-50 px-4 py-3 rounded-xl transition-colors"><Trash2 className="w-5 h-5" /> Excluir</button>
                   <button onClick={() => setView('form')} className="flex items-center gap-2 text-white px-8 py-3 rounded-xl font-bold shadow-md hover:shadow-lg transition-all text-lg" style={{ backgroundColor: COLORS.blue }}><Edit2 className="w-5 h-5" /> Editar Cadastro</button>
                </div>
              </div>
@@ -532,20 +606,95 @@ export default function App() {
       </main>
 
       <LocationManagerModal 
-         isOpen={isLocationManagerOpen} 
-         onClose={() => setIsLocationManagerOpen(false)} 
-         locations={uniqueLocations} 
-         items={items} 
-         db={db} 
-         user={user} 
-         appId={APP_ID}
+         isOpen={isLocationManagerOpen} onClose={() => setIsLocationManagerOpen(false)} locations={uniqueLocations} items={items} db={db} user={user} appId={APP_ID}
+      />
+      
+      {/* MODAL DE TRANSAÇÃO (BAIXA/ENTRADA) */}
+      <TransactionModal
+         intent={transactionIntent}
+         onClose={() => setTransactionIntent(null)}
+         onConfirm={executeTransaction}
+         colors={COLORS}
       />
     </div>
   );
 }
 
 // ==========================================
-// COMPONENTE: TELA DE LOGIN (SEM CRIAÇÃO DE CONTA)
+// COMPONENTE: MODAL DE TRANSAÇÃO 
+// ==========================================
+function TransactionModal({ intent, onClose, onConfirm, colors }: any) {
+  const [quantidade, setQuantidade] = useState<number | ''>('');
+  const [responsavel, setResponsavel] = useState('');
+  const [observacoes, setObservacoes] = useState('');
+
+  useEffect(() => {
+    if (intent) { setQuantidade(''); setResponsavel(''); setObservacoes(''); }
+  }, [intent]);
+
+  if (!intent) return null;
+
+  const isEntrada = intent.type === 'Entrada';
+  const item = intent.item;
+
+  const handleSubmit = (e: any) => {
+    e.preventDefault();
+    if (!quantidade || Number(quantidade) <= 0) return alert("Insira uma quantidade válida maior que zero.");
+    if (!responsavel.trim()) return alert("O Nome do Responsável é obrigatório.");
+    onConfirm(Number(quantidade), responsavel, observacoes);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-slate-900/70 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md flex flex-col overflow-hidden transform transition-all">
+        <div className={`p-6 border-b flex justify-between items-center ${isEntrada ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+          <div className="flex items-center gap-3">
+            <div className={`p-2 rounded-full ${isEntrada ? 'bg-green-200 text-green-700' : 'bg-red-200 text-red-700'}`}>
+              <ArrowRightLeft className="w-6 h-6" />
+            </div>
+            <div>
+              <h2 className={`font-black text-xl leading-tight ${isEntrada ? 'text-green-800' : 'text-red-800'}`}>
+                {isEntrada ? 'Registrar Entrada' : 'Registrar Saída (Baixa)'}
+              </h2>
+              <p className="text-xs font-bold text-slate-500 mt-0.5">{item.nome}</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-2 hover:bg-black/5 rounded-full transition-colors"><X className="w-6 h-6 text-slate-500" /></button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="p-6 space-y-5">
+          <div className="flex justify-between items-center bg-slate-50 p-4 rounded-xl border border-slate-200">
+            <span className="text-sm font-bold text-slate-500 uppercase tracking-wide">Estoque Atual:</span>
+            <span className="text-xl font-black text-slate-800">{item.quantidade} <span className="text-sm">{item.unidade}</span></span>
+          </div>
+
+          <div>
+            <label className="block text-sm font-bold text-slate-600 mb-2 uppercase tracking-wide">Qtd. da {intent.type} *</label>
+            <input type="number" required min="1" step="0.01" value={quantidade} onChange={e => setQuantidade(e.target.value === '' ? '' : Number(e.target.value))} className={`w-full px-5 py-4 border-2 rounded-xl outline-none transition-colors text-2xl font-black ${isEntrada ? 'focus:border-green-500 border-green-200 bg-green-50/50 text-green-900' : 'focus:border-red-500 border-red-200 bg-red-50/50 text-red-900'}`} placeholder="0" autoFocus />
+          </div>
+
+          <div>
+            <label className="block text-sm font-bold text-slate-600 mb-2 uppercase tracking-wide">Nome do Responsável *</label>
+            <input type="text" required value={responsavel} onChange={e => setResponsavel(e.target.value)} className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl outline-none focus:border-blue-600 transition-colors font-bold text-slate-800" placeholder="Quem retirou/devolveu?" />
+          </div>
+
+          <div>
+            <label className="block text-sm font-bold text-slate-500 mb-2 uppercase tracking-wide">Motivo / Observação (Opcional)</label>
+            <textarea value={observacoes} onChange={e => setObservacoes(e.target.value)} className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl resize-none outline-none focus:border-blue-600 transition-colors font-medium text-slate-700" rows={2} placeholder="Ex: Para uso no setor B..."></textarea>
+          </div>
+
+          <div className="pt-4 flex gap-3">
+            <button type="button" onClick={onClose} className="flex-1 py-4 border-2 border-slate-300 text-slate-700 rounded-xl font-bold hover:bg-slate-100 transition-colors">Cancelar</button>
+            <button type="submit" className={`flex-1 py-4 text-white rounded-xl font-black shadow-lg hover:shadow-xl transition-all ${isEntrada ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'}`}>Confirmar</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ==========================================
+// COMPONENTE: TELA DE LOGIN 
 // ==========================================
 function AuthScreen({ colors, auth }: any) {
   const [email, setEmail] = useState('');
@@ -555,28 +704,17 @@ function AuthScreen({ colors, auth }: any) {
 
   const handleSubmit = async (e: any) => {
     e.preventDefault();
-    setLoading(true);
-    setErrorMsg('');
+    setLoading(true); setErrorMsg('');
 
     const emailAjustado = email.toLowerCase().trim();
     if (!emailAjustado.endsWith('@seel.com.br')) {
       setErrorMsg('Acesso restrito! Apenas e-mails corporativos (@seel.com.br) são permitidos.');
-      setLoading(false);
-      return;
+      setLoading(false); return;
     }
 
-    try {
-      await signInWithEmailAndPassword(auth, emailAjustado, password);
-    } catch (error: any) {
-      console.error(error);
-      if (error.code === 'auth/invalid-credential' || error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') {
-        setErrorMsg('E-mail ou senha incorretos.');
-      } else {
-        setErrorMsg('Erro de autenticação. Contacte o administrador do sistema.');
-      }
-    } finally {
-      setLoading(false);
-    }
+    try { await signInWithEmailAndPassword(auth, emailAjustado, password); } 
+    catch (error: any) { setErrorMsg('E-mail ou senha incorretos.'); } 
+    finally { setLoading(false); }
   };
 
   return (
@@ -643,8 +781,6 @@ function LocationManagerModal({ isOpen, onClose, locations, items, db, user, app
   const handleDelete = async (locName: string) => {
     const count = items.filter((i: any) => i.localizacao === locName).length;
     if (!window.confirm(`Atenção: Tem certeza que deseja excluir o almoxarifado "${locName}"?\nEle será removido de ${count} item(ns) do estoque.`)) return;
-    if (!window.confirm(`CUIDADO! Esta ação não pode ser desfeita.\nDeseja MESMO excluir definitivamente o local "${locName}"?`)) return;
-
     try {
       const batch = writeBatch(db);
       const itemsToUpdate = items.filter((i: any) => i.localizacao === locName);
@@ -660,24 +796,13 @@ function LocationManagerModal({ isOpen, onClose, locations, items, db, user, app
     <div className="fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg flex flex-col max-h-[85vh] overflow-hidden">
         <div className="p-6 border-b border-slate-200 flex justify-between items-center bg-slate-50">
-          <div className="flex items-center gap-3">
-            <Settings className="w-6 h-6 text-slate-600" />
-            <h2 className="font-bold text-xl text-slate-800">Gerenciar Almoxarifados</h2>
-          </div>
+          <div className="flex items-center gap-3"><Settings className="w-6 h-6 text-slate-600" /><h2 className="font-bold text-xl text-slate-800">Gerenciar Almoxarifados</h2></div>
           <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-full transition-colors"><X className="w-6 h-6 text-slate-500" /></button>
         </div>
-        
-        <div className="p-3 bg-blue-50 text-blue-800 text-sm text-center border-b border-blue-100 font-bold">
-          As alterações afetam todos os materiais nestes locais.
-        </div>
-
+        <div className="p-3 bg-blue-50 text-blue-800 text-sm text-center border-b border-blue-100 font-bold">As alterações afetam todos os materiais nestes locais.</div>
         <div className="p-6 overflow-y-auto flex-1 custom-scrollbar">
           {locations.length === 0 ? (
-            <div className="text-center text-slate-500 py-10 bg-slate-50 rounded-xl border border-dashed border-slate-300">
-               <MapPin className="w-12 h-12 mx-auto text-slate-300 mb-3" />
-               <p className="font-bold">Nenhum local cadastrado.</p>
-               <p className="text-sm">Eles aparecerão aqui ao criar novos itens.</p>
-            </div>
+            <div className="text-center text-slate-500 py-10 bg-slate-50 rounded-xl border border-dashed border-slate-300"><MapPin className="w-12 h-12 mx-auto text-slate-300 mb-3" /><p className="font-bold">Nenhum local cadastrado.</p></div>
           ) : (
             <ul className="space-y-3">
               {locations.map((loc: string) => (
@@ -689,13 +814,7 @@ function LocationManagerModal({ isOpen, onClose, locations, items, db, user, app
                       <button onClick={() => setEditingLoc(null)} className="bg-slate-200 hover:bg-slate-500 text-slate-700 px-4 font-bold rounded-lg transition-colors">X</button>
                     </div>
                   ) : (
-                    <>
-                      <span className="font-bold text-lg text-slate-700 truncate pr-4">{loc}</span>
-                      <div className="flex gap-2 shrink-0">
-                        <button onClick={() => { setEditingLoc(loc); setNewName(loc); }} className="p-2 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg transition-colors" title="Editar Nome"><Edit2 className="w-5 h-5"/></button>
-                        <button onClick={() => handleDelete(loc)} className="p-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg transition-colors" title="Excluir Local"><Trash2 className="w-5 h-5"/></button>
-                      </div>
-                    </>
+                    <><span className="font-bold text-lg text-slate-700 truncate pr-4">{loc}</span><div className="flex gap-2 shrink-0"><button onClick={() => { setEditingLoc(loc); setNewName(loc); }} className="p-2 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg transition-colors" title="Editar Nome"><Edit2 className="w-5 h-5"/></button><button onClick={() => handleDelete(loc)} className="p-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg transition-colors" title="Excluir Local"><Trash2 className="w-5 h-5"/></button></div></>
                   )}
                 </li>
               ))}
@@ -711,7 +830,7 @@ function LocationManagerModal({ isOpen, onClose, locations, items, db, user, app
 }
 
 // ==========================================
-// COMPONENTE: FORMULÁRIO DE ITENS (CORRIGIDO ALMOXARIFADO)
+// COMPONENTE: FORMULÁRIO DE ITENS 
 // ==========================================
 function ItemForm({ item, onSave, onCancel, colors, locations }: any) {
   const [formData, setFormData] = useState(item || { 
@@ -775,7 +894,7 @@ function ItemForm({ item, onSave, onCancel, colors, locations }: any) {
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-6">
-          <div><label className="block text-sm font-black text-blue-800 mb-2 uppercase tracking-wide">QTD EM ESTOQUE</label><input type="number" name="quantidade" value={formData.quantidade} onChange={handleChange} className="w-full px-5 py-4 border-2 border-blue-400 bg-blue-50 rounded-xl font-black outline-none focus:border-blue-700 transition-colors text-2xl text-blue-900" placeholder="0" /></div>
+          <div><label className="block text-sm font-black text-blue-800 mb-2 uppercase tracking-wide">QTD INICIAL</label><input type="number" name="quantidade" value={formData.quantidade} onChange={handleChange} className="w-full px-5 py-4 border-2 border-blue-400 bg-blue-50 rounded-xl font-black outline-none focus:border-blue-700 transition-colors text-2xl text-blue-900" placeholder="0" /></div>
           <div><label className="block text-sm font-bold text-slate-500 mb-2 uppercase tracking-wide">Unidade</label><select name="unidade" value={formData.unidade} onChange={handleChange} className="w-full px-5 py-4 border-2 border-slate-200 rounded-xl bg-white outline-none focus:border-blue-600 transition-colors text-lg font-bold text-slate-700">{UNIDADES.map(u => <option key={u}>{u}</option>)}</select></div>
           <div><label className="block text-sm font-black text-red-700 mb-2 uppercase tracking-wide" title="Sistema avisará quando chegar neste valor">MÍNIMO IDEAL</label><input type="number" name="estoqueMinimo" value={formData.estoqueMinimo} onChange={handleChange} className="w-full px-5 py-4 border-2 border-red-300 bg-red-50 rounded-xl font-black outline-none focus:border-red-600 transition-colors text-2xl text-red-900" placeholder="0" /></div>
           <div><label className="block text-sm font-bold text-slate-500 mb-2 uppercase tracking-wide">Estado *</label><select required name="status" value={formData.status} onChange={handleChange} className="w-full px-5 py-4 border-2 border-slate-200 rounded-xl bg-white outline-none focus:border-blue-600 transition-colors text-lg font-bold text-slate-700">{STATUS.map(s => <option key={s}>{s}</option>)}</select></div>
@@ -783,49 +902,15 @@ function ItemForm({ item, onSave, onCancel, colors, locations }: any) {
 
         <div>
           <label className="block text-sm font-bold text-slate-500 mb-2 uppercase tracking-wide">Almoxarifado / Localização na Obra *</label>
-          
           {isCustomLoc ? (
             <div className="flex gap-2">
-              <input 
-                type="text" 
-                name="localizacao" 
-                required
-                value={formData.localizacao} 
-                onChange={handleChange} 
-                className="flex-1 px-5 py-4 border-2 border-blue-400 bg-blue-50 rounded-xl outline-none focus:border-blue-600 transition-colors text-lg font-bold text-slate-800" 
-                placeholder="Digite o nome do Almoxarifado..." 
-                autoComplete="off" 
-                autoFocus
-              />
+              <input type="text" name="localizacao" required value={formData.localizacao} onChange={handleChange} className="flex-1 px-5 py-4 border-2 border-blue-400 bg-blue-50 rounded-xl outline-none focus:border-blue-600 transition-colors text-lg font-bold text-slate-800" placeholder="Digite o nome do Almoxarifado..." autoComplete="off" autoFocus />
               {locations.length > 0 && (
-                <button 
-                  type="button" 
-                  onClick={() => {
-                    setIsCustomLoc(false);
-                    setFormData((prev: any) => ({ ...prev, localizacao: locations[0] || '' }));
-                  }} 
-                  className="px-4 border-2 border-slate-200 text-slate-500 rounded-xl hover:bg-slate-100 transition-colors font-bold"
-                  title="Voltar para a lista de locais"
-                >
-                  <X className="w-6 h-6" />
-                </button>
+                <button type="button" onClick={() => { setIsCustomLoc(false); setFormData((prev: any) => ({ ...prev, localizacao: locations[0] || '' })); }} className="px-4 border-2 border-slate-200 text-slate-500 rounded-xl hover:bg-slate-100 transition-colors font-bold" title="Voltar para a lista"><X className="w-6 h-6" /></button>
               )}
             </div>
           ) : (
-            <select 
-              name="localizacao" 
-              required
-              value={formData.localizacao} 
-              onChange={(e) => {
-                if (e.target.value === 'NOVO_LOCAL') {
-                  setIsCustomLoc(true);
-                  setFormData((prev: any) => ({ ...prev, localizacao: '' }));
-                } else {
-                  handleChange(e);
-                }
-              }}
-              className="w-full px-5 py-4 border-2 border-slate-200 rounded-xl bg-white outline-none focus:border-blue-600 transition-colors text-lg font-bold text-slate-800 cursor-pointer"
-            >
+            <select name="localizacao" required value={formData.localizacao} onChange={(e) => { if (e.target.value === 'NOVO_LOCAL') { setIsCustomLoc(true); setFormData((prev: any) => ({ ...prev, localizacao: '' })); } else { handleChange(e); } }} className="w-full px-5 py-4 border-2 border-slate-200 rounded-xl bg-white outline-none focus:border-blue-600 transition-colors text-lg font-bold text-slate-800 cursor-pointer" >
               <option value="">Selecione o Almoxarifado...</option>
               {locations.map((loc: string) => <option key={loc} value={loc}>{loc}</option>)}
               <option value="NOVO_LOCAL" className="font-bold text-blue-700 bg-blue-50">➕ Adicionar Novo Local...</option>
