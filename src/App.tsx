@@ -171,43 +171,50 @@ export default function App() {
     });
   }, [items, searchTerm, filterCategory, filterLocation]);
 
-  // FUNÇÃO CORRIGIDA DE DOWNLOAD (FORÇA O NAVEGADOR A BAIXAR)
+  // ======================================================================
+  // SISTEMA DE EXPORTAÇÃO DE PLANILHAS (CORRIGIDO PARA EXCEL PORTUGUÊS)
+  // ======================================================================
+  
   const downloadBlob = (content: string, filename: string) => {
-    const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
+    // O "\ufeff" (BOM) avisa o Excel para ler os acentos corretamente.
+    const blob = new Blob(["\ufeff", content], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url; 
     link.download = filename; 
-    link.style.display = 'none'; // Esconde o link
-    document.body.appendChild(link); // Anexa na página (obrigatório em muitos navegadores)
-    link.click(); // Força o clique
-    document.body.removeChild(link); // Limpa o link da página
-    URL.revokeObjectURL(url); // Liberta a memória
+    link.style.display = 'none'; 
+    document.body.appendChild(link); 
+    link.click(); 
+    document.body.removeChild(link); 
+    URL.revokeObjectURL(url); 
   };
 
   // PLANILHA 1: ESTOQUE ATUAL
   const exportToExcel = () => {
-    const headers = ['NOME,CATEGORIA,QUANTIDADE,UNIDADE,ESTOQUE MINIMO,STATUS,ALMOXARIFADO,OBSERVACOES\n'];
+    // Agora usamos ponto-e-vírgula (;) para separar colunas no Excel brasileiro/português
+    const headers = ['NOME;CATEGORIA;QUANTIDADE;UNIDADE;ESTOQUE MINIMO;STATUS;ALMOXARIFADO;OBSERVACOES\n'];
     const rows = items.map(item => {
       const obs = item.observacoes ? item.observacoes.replace(/(\r\n|\n|\r)/gm, " ") : "";
-      return `"${item.nome}","${item.categoria}",${item.quantidade},"${item.unidade}",${item.estoqueMinimo || 0},"${item.status}","${item.localizacao}","${obs}"`;
+      return `"${item.nome}";"${item.categoria}";${item.quantidade};"${item.unidade}";${item.estoqueMinimo || 0};"${item.status}";"${item.localizacao || ''}";"${obs}"`;
     });
-    const csvContent = "\uFEFF" + headers + rows.join('\n');
+    const csvContent = headers + rows.join('\n');
     downloadBlob(csvContent, `Estoque_Atual_SEEL_${new Date().toLocaleDateString('pt-BR').replace(/\//g, '-')}.csv`);
   };
 
   // PLANILHA 2: HISTÓRICO DE MOVIMENTAÇÕES
   const exportTransactionsToExcel = () => {
-    const headers = ['DATA HORA,TIPO MOVIMENTACAO,ITEM,QTD MOVIMENTADA,RESPONSAVEL,ALMOXARIFADO,OBSERVACOES\n'];
+    // Usando ponto-e-vírgula (;) para organizar perfeitamente as colunas
+    const headers = ['DATA HORA;TIPO MOVIMENTACAO;ITEM;QTD MOVIMENTADA;RESPONSAVEL;ALMOXARIFADO;OBSERVACOES\n'];
     const rows = transactions.map(tx => {
       const dateObj = tx.dataHora ? new Date(tx.dataHora.seconds * 1000) : new Date();
       const dateStr = dateObj.toLocaleString('pt-BR');
       const obs = tx.observacoes ? tx.observacoes.replace(/(\r\n|\n|\r)/gm, " ") : "";
-      return `"${dateStr}","${tx.tipo}","${tx.itemName}",${tx.quantidade},"${tx.responsavel || ''}","${tx.localizacao || ''}","${obs}"`;
+      return `"${dateStr}";"${tx.tipo}";"${tx.itemName}";${tx.quantidade};"${tx.responsavel || ''}";"${tx.localizacao || ''}";"${obs}"`;
     });
-    const csvContent = "\uFEFF" + headers + rows.join('\n');
+    const csvContent = headers + rows.join('\n');
     downloadBlob(csvContent, `Relatorio_Movimentacoes_SEEL_${new Date().toLocaleDateString('pt-BR').replace(/\//g, '-')}.csv`);
   };
+  // ======================================================================
 
   const handleSaveItem = async (formData: any) => {
     if (!user) return alert("Sessão expirada.");
